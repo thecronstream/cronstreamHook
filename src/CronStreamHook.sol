@@ -16,6 +16,12 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {SwapParams} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
+import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
+import {ICronStream} from "./ICronStream.sol";
+
+
 
 
 // ─── Contract declaration ─────────────────────────────────────────────────────
@@ -23,7 +29,8 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 // and enforces that only the poolManager can call our hook callbacks)
 // It also inherits Ownable so we have an admin for authorizePool()
 
-contract CronStreamHook /* is BaseHook, Ownable, ICronStream */ {
+abstract contract CronStreamHook is BaseHook, Ownable, ICronStream {
+
 
     // ─── Transient storage slots ──────────────────────────────────────────────
     // These are EIP-1153 slots — they cost ~100 gas to write and are automatically
