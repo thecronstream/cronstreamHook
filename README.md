@@ -15,14 +15,25 @@ Dynamic fee adjustment based on network gas price.
 - Low gas price → higher swap fee (captures more value)
 - Uses `beforeSwap` to return an override fee via `LPFeeLibrary.OVERRIDE_FEE_FLAG`
 
-### CronStreamHook *(in development)*
-Reward Aggregator for Uniswap v4 pools.
+### CronStreamHook
+Streaming USDC rewards for liquidity providers.
 
-LPs earn USDC rewards proportional to how long they keep their liquidity active. No custody — funds never leave the PoolManager. Rewards are distributed from an external vault funded by the protocol or asset issuers.
+LPs earn USDC rewards proportional to how long they keep their liquidity active. No token custody — funds never leave the PoolManager. Rewards are distributed from a Circle Wallet vault funded by the protocol or asset issuers.
 
 - `afterAddLiquidity` — records LP entry timestamp and liquidity amount
 - `afterRemoveLiquidity` — calculates time-weighted reward and accrues it
-- `claimRewards()` — LP calls to withdraw accumulated USDC rewards
+- `claimRewards()` — LP pulls accumulated USDC from the Circle Wallet vault
+
+**Idea credit:** This hook builds on the "Streaming USDC Rewards for Liquidity Providers" concept from the [Atrium Academy Request for Hooks](https://atriumacademy.notion.site/atrium-academy-request-for-hooks) (Circle Hook Ideas section). The implementation is original.
+
+---
+
+## Partner integrations
+
+| Partner | Integration | Location in code |
+|---|---|---|
+| Circle USDC | Reward token distributed to LPs | `src/CronStreamHook.sol` — `rewardToken`, `claimRewards()` |
+| Circle Wallets | External vault that funds LP rewards | `src/CronStreamHook.sol` — `rewardVault` |
 
 ---
 
@@ -44,6 +55,7 @@ forge test
 
 # Specific hook
 forge test --match-path test/GasPriceFeeHook.t.sol -v
+forge test --match-path test/CronStreamHook.t.sol -v
 ```
 
 ---
@@ -54,7 +66,9 @@ forge test --match-path test/GasPriceFeeHook.t.sol -v
 |---|---|
 | Smart contracts | Solidity 0.8.26 · Foundry |
 | Hook base | OpenZeppelin uniswap-hooks · Uniswap v4-core |
-| Target networks | Base · Arbitrum One · Unichain |
+| Reward token | Circle USDC |
+| Reward vault | Circle Wallets |
+| Target networks | Base · Unichain |
 
 ---
 
