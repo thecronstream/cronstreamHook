@@ -174,6 +174,70 @@ contract CronStreamHookTest is BaseTest {
         hook.setRewardRate(999);
     }
 
+    // ─── Security tests ───────────────────────────────────────────────────────
+
+    // Same block add and remove — elapsed = 0, reward must be 0, no revert
+    function test_security_sameBlock_noRevertNoReward() public {
+        address lp = makeAddr("lp");
+        PoolKey memory key;
+
+        _addLiquidity(lp, key, int256(uint256(LIQUIDITY)));
+
+        // Remove in the same block — no time has passed
+        _removeLiquidity(lp, key, int256(uint256(LIQUIDITY)));
+
+        assertEq(hook.pendingRewards(lp), 0);
+    }
+
+    // Tiny LP in a pool dominated by a whale — reward rounds to zero, no revert
+    function test_security_precisionLoss_tinyLP_rewardRoundsToZeroGracefully() public {
+        address whale = makeAddr("whale");
+        address tiny  = makeAddr("tiny");
+        PoolKey memory key;
+
+        hook.setRewardRate(1); // 1 token per unit per second — forces floor division
+
+        _addLiquidity(whale, key, 1_000_000);
+        _addLiquidity(tiny,  key, 1);
+
+        vm.warp(block.timestamp + 1);
+
+        // reward = (1 * 1 * 1) / 1_000_001 = 0 (floor division)
+        _removeLiquidity(tiny, key, 1);
+
+        assertEq(hook.pendingRewards(tiny), 0); // rounds to zero — no revert, no stuck funds
+    }
+
+    // Same LP, same pool, two positions with different salts — tracked independently
+    function test_security_twoPositions_differentSalts_independentTracking() public {
+        address lp = makeAddr("lp");
+        PoolKey memory key;
+        PoolId poolId = key.toId();
+
+        ModifyLiquidityParams memory paramsA = ModifyLiquidityParams({
+            tickLower: -60, tickUpper: 60, liquidityDelta: int256(uint256(LIQUIDITY)), salt: bytes32(0)
+        });
+        ModifyLiquidityParams memory paramsB = ModifyLiquidityParams({
+            tickLower: -60, tickUpper: 60, liquidityDelta: int256(uint256(LIQUIDITY)), salt: bytes32(uint256(1))
+        });
+
+        vm.prank(address(poolManager));
+        hook.afterAddLiquidity(lp, key, paramsA, BalanceDelta.wrap(0), BalanceDelta.wrap(0), "");
+
+        vm.warp(block.timestamp + 100);
+
+        vm.prank(address(poolManager));
+        hook.afterAddLiquidity(lp, key, paramsB, BalanceDelta.wrap(0), BalanceDelta.wrap(0), "");
+
+        bytes32 posIdA = keccak256(abi.encodePacked(lp, int24(-60), int24(60), bytes32(0)));
+        bytes32 posIdB = keccak256(abi.encodePacked(lp, int24(-60), int24(60), bytes32(uint256(1))));
+
+        // Position A entry time must not have been overwritten by position B
+        assertEq(hook.lpEntryTime(poolId, posIdA), 1); // original timestamp
+        assertEq(hook.lpEntryTime(poolId, posIdB), block.timestamp); // B added later
+        assertTrue(hook.lpEntryTime(poolId, posIdA) != hook.lpEntryTime(poolId, posIdB));
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     // Matches _positionId() in the contract — default tick range and zero salt
