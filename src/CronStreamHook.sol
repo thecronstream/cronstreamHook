@@ -21,8 +21,11 @@ contract CronStreamHook is BaseHook, Ownable {
 
     // ─── Storage ──────────────────────────────────────────────────────────────
 
-    mapping(PoolId => mapping(address => uint256)) public lpEntryTime;
-    mapping(PoolId => mapping(address => uint128)) public lpLiquidity;
+    // Keyed by positionId = keccak256(sender, tickLower, tickUpper, salt)
+    // so two positions from the same LP in the same tick range but different salts
+    // are tracked independently and don't overwrite each other.
+    mapping(PoolId => mapping(bytes32 => uint256)) public lpEntryTime;
+    mapping(PoolId => mapping(bytes32 => uint128)) public lpLiquidity;
     mapping(PoolId => uint128) public totalLiquidity;
     mapping(address => uint256) public pendingRewards;
 
@@ -80,15 +83,16 @@ contract CronStreamHook is BaseHook, Ownable {
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
         PoolId poolId = key.toId();
+        bytes32 posId = _positionId(sender, params);
         uint128 newLiquidity = uint128(uint256(params.liquidityDelta));
 
-        if (lpLiquidity[poolId][sender] > 0) {
-            // LP already has a position — accrue reward before resetting their clock
-            _accrueReward(poolId, sender);
+        if (lpLiquidity[poolId][posId] > 0) {
+            // Position already exists — accrue reward before resetting the clock
+            _accrueReward(poolId, posId, sender);
         }
 
-        lpEntryTime[poolId][sender] = block.timestamp;
-        lpLiquidity[poolId][sender] += newLiquidity;
+        lpEntryTime[poolId][posId] = block.timestamp;
+        lpLiquidity[poolId][posId] += newLiquidity;
         totalLiquidity[poolId] += newLiquidity;
 
         return (BaseHook.afterAddLiquidity.selector, BalanceDelta.wrap(0));
@@ -105,30 +109,37 @@ contract CronStreamHook is BaseHook, Ownable {
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
         PoolId poolId = key.toId();
+        bytes32 posId = _positionId(sender, params);
         uint128 removedLiquidity = uint128(uint256(-params.liquidityDelta));
 
-        _accrueReward(poolId, sender);
+        _accrueReward(poolId, posId, sender);
 
-        lpLiquidity[poolId][sender] -= removedLiquidity;
+        lpLiquidity[poolId][posId] -= removedLiquidity;
         totalLiquidity[poolId] -= removedLiquidity;
 
-        if (lpLiquidity[poolId][sender] == 0) {
-            delete lpEntryTime[poolId][sender];
+        if (lpLiquidity[poolId][posId] == 0) {
+            delete lpEntryTime[poolId][posId];
         } else {
-            lpEntryTime[poolId][sender] = block.timestamp;
+            lpEntryTime[poolId][posId] = block.timestamp;
         }
 
         return (BaseHook.afterRemoveLiquidity.selector, BalanceDelta.wrap(0));
     }
 
-    // ─── Internal reward calculation ──────────────────────────────────────────
+    // ─── Internal helpers ─────────────────────────────────────────────────────
 
-    function _accrueReward(PoolId poolId, address lp) internal {
-        uint256 entryTime = lpEntryTime[poolId][lp];
+    function _positionId(address sender, ModifyLiquidityParams calldata params)
+        internal pure returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(sender, params.tickLower, params.tickUpper, params.salt));
+    }
+
+    function _accrueReward(PoolId poolId, bytes32 posId, address lp) internal {
+        uint256 entryTime = lpEntryTime[poolId][posId];
         if (entryTime == 0 || totalLiquidity[poolId] == 0) return;
 
         uint256 elapsed = block.timestamp - entryTime;
-        uint256 reward = (uint256(lpLiquidity[poolId][lp]) * elapsed * rewardRatePerSecond)
+        uint256 reward = (uint256(lpLiquidity[poolId][posId]) * elapsed * rewardRatePerSecond)
             / uint256(totalLiquidity[poolId]);
 
         if (reward > 0) {
@@ -160,4 +171,6 @@ contract CronStreamHook is BaseHook, Ownable {
         rewardRatePerSecond = _newRate;
         emit RateUpdated(_newRate);
     }
+
+  
 }
