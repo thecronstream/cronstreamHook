@@ -208,6 +208,14 @@ script/
 
 ---
 
+## Links
+
+- **X (Twitter):** https://x.com/cronstream
+- **GitHub Org:** https://github.com/thecronstream
+- **Builder:** [Adebanjo Abraham](https://github.com/16navigabraham)
+
+---
+
 ## License
 
 MIT © [Cronstream Protocol Lab](https://github.com/thecronstream)
